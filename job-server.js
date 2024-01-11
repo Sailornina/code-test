@@ -2,7 +2,6 @@ import pg from 'pg';
 import { faker } from '@faker-js/faker';
 const { Client } = pg
 
-
 const username = process.env
 
 const options = {
@@ -24,7 +23,7 @@ const generateRandomPerson = () => ({
 
 const persons = await Promise.all(Array.from({ length: 10000 }, generateRandomPerson).map(async(person) => {
   let result = await client.query("INSERT INTO persons(first_name, last_name) VALUES ($1, $2) RETURNING id", [person.first_name, person.last_name])
-  console.log("Inserted person: " + JSON.stringify(person))
+  // console.log("Inserted person: " + JSON.stringify(person))
   return {id: parseInt(result.rows[0].id), ...person}
 }));
 
@@ -35,7 +34,7 @@ const generateRandomCompany = () => ({
 
 const companies = await Promise.all(Array.from({ length: 5000 }, generateRandomCompany).map(async(company) => {
   let result = await client.query("INSERT INTO companies(company_name) VALUES ($1) RETURNING id", [company.company_name])
-  console.log("Inserted company: " + JSON.stringify(company))
+  // console.log("Inserted company: " + JSON.stringify(company))
   return {id: parseInt(result.rows[0].id), ...company}
 }));
 
@@ -51,11 +50,13 @@ let jobs_results = await persons.flatMap(async (person) => {
 
   for (let i = 0; i < numberOfJobs; i++) {
     const company = companies[Math.floor(Math.random()*companies.length)];
-    const start_date = faker.date.past({ years: 2, refDate: currentDate})
-    const end_date = faker.date.past({years: 2, to: start_date})
+
+    const end_date = i == 0 ? null : faker.date.past({ years: 1, refDate: currentDate})
+    const start_date = i == 0 ? faker.date.past({years: 3}) : faker.date.past({years: 2, refDate: end_date})
+
     currentDate = start_date;
     const values = [person.id, company.id, start_date, end_date]
-    console.log("Inserting job: " + values)
+    // console.log("Inserting job: " + values)
     let job_result = await client.query("INSERT INTO jobs(person_id, company_id, start_date, end_date) VALUES ($1, $2, $3, $4)", values)
     job_results.push(job_result)
   }
@@ -77,5 +78,5 @@ const getJobData = async () => {
 
 await Promise.all(jobs_results)
 const result = await getJobData();
-console.log(result);
+// console.log(result);
 client.end();
