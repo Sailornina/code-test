@@ -1,8 +1,7 @@
-import pg from 'pg';
 import { faker } from '@faker-js/faker';
-const { Client } = pg
+import pgPromise from 'pg-promise'
 
-const username = process.env
+const BATCH_SIZE = 100;
 
 const options = {
   user: process.env.POSTGRES_USER,
@@ -10,10 +9,25 @@ const options = {
   database: process.env.POSTGRES_DB,
   password: process.env.POSTGRES_PWD,
   port: process.env.POSTGRES_PORT,
-}
+  allowExitOnIdle: true
 
-const client = new Client(options)
-await client.connect()
+}
+const pgp = pgPromise()
+const db = pgp(options)
+
+function slicedArray(array, sliceSize) {
+  return array.reduce((acc, current, index) => {
+    const sliceIndex = Math.floor(index / sliceSize);
+  
+    if (!acc[sliceIndex]) {
+      acc[sliceIndex] = [current];
+    } else {
+      acc[sliceIndex].push(current);
+    }
+  
+    return acc;
+  }, []);
+}
 
 //Persons.
 const generateRandomPerson = () => ({
@@ -21,62 +35,79 @@ const generateRandomPerson = () => ({
   last_name: faker.person.lastName(),
 });
 
-const persons = await Promise.all(Array.from({ length: 10000 }, generateRandomPerson).map(async(person) => {
-  let result = await client.query("INSERT INTO persons(first_name, last_name) VALUES ($1, $2) RETURNING id", [person.first_name, person.last_name])
-  // console.log("Inserted person: " + JSON.stringify(person))
-  return {id: parseInt(result.rows[0].id), ...person}
-}));
+const personColumnSet = new pgp.helpers.ColumnSet([
+  {name: "first_name"},
+  {name: "last_name"}
+], {table: "persons"})
 
-//Companies.
+const persons = Array.from({ length: 10000 }, generateRandomPerson);
+
+const personsInsertResults = slicedArray(persons, BATCH_SIZE).map((batchToInsert) => {
+  return db.none(pgp.helpers.insert(batchToInsert, personColumnSet));
+});
+
+//Companies
 const generateRandomCompany = () => ({
   company_name: faker.company.name(),
 });
 
-const companies = await Promise.all(Array.from({ length: 5000 }, generateRandomCompany).map(async(company) => {
-  let result = await client.query("INSERT INTO companies(company_name) VALUES ($1) RETURNING id", [company.company_name])
-  // console.log("Inserted company: " + JSON.stringify(company))
-  return {id: parseInt(result.rows[0].id), ...company}
-}));
+const companyColumnSet = new pgp.helpers.ColumnSet([
+  {name: "company_name"}
+], {table: "companies"})
 
-// Creating jobs for EACH person with random companies.
-const jobs = [];
-let jobs_results = await persons.flatMap(async (person) => {
+const companies = Array.from({ length: 5000 }, generateRandomCompany);
+
+const companiesInsertResults = slicedArray(companies, BATCH_SIZE).map((batchToInsert) => {
+  return db.none(pgp.helpers.insert(batchToInsert, companyColumnSet));
+});
+
+await Promise.all([personsInsertResults, companiesInsertResults].flat())
+
+console.log("Companies and Persons are Done!")
+
+// // Creating jobs for EACH person with random companies.
+const personIds = (await db.any("SELECT id FROM persons")).map((result) => parseInt(result["id"]));
+const companyIds = (await db.any("SELECT id FROM companies")).map((result) => parseInt(result["id"]));  
+
+const jobColumnSet = new pgp.helpers.ColumnSet([
+  {name: "person_id"},
+  {name: "company_id"},
+  {name: "start_date"},
+  {name: "end_date"},
+], {table: "jobs"})
+
+let allJobs = personIds.flatMap((personId) => {
 
   const numberOfJobs = Math.floor(Math.random() * 3) + 1;
 
   var currentDate = new Date();
 
-  let job_results = []
+  let jobs = []
 
   for (let i = 0; i < numberOfJobs; i++) {
-    const company = companies[Math.floor(Math.random()*companies.length)];
+    const companyId = companyIds[Math.floor(Math.random()*companyIds.length)];
 
     const end_date = i == 0 ? null : faker.date.past({ years: 1, refDate: currentDate})
     const start_date = i == 0 ? faker.date.past({years: 3}) : faker.date.past({years: 2, refDate: end_date})
 
     currentDate = start_date;
-    const values = [person.id, company.id, start_date, end_date]
-    // console.log("Inserting job: " + values)
-    let job_result = await client.query("INSERT INTO jobs(person_id, company_id, start_date, end_date) VALUES ($1, $2, $3, $4)", values)
-    job_results.push(job_result)
+
+    jobs.push({
+      person_id: personId,
+      company_id: companyId,
+      start_date,
+      end_date
+    })
   }
 
-  return jobs_results; 
+  return jobs; 
 });
 
+const jobsInsertResults = slicedArray(allJobs, BATCH_SIZE).map((batchToInsert) => {
+  return db.none(pgp.helpers.insert(batchToInsert, jobColumnSet));
+});
 
-//All Job Data.
-const getJobData = async () => {
-  try {
-    const res = await client.query('SELECT p.id, p.first_name, p.last_name, c.company_name, j.start_date, j.end_date FROM jobs AS j LEFT JOIN companies AS c ON c.id = j.company_id LEFT JOIN persons AS p ON p.id = j.person_id GROUP BY p.id, c.id, j.id')
-    return res.rows
-  } catch (err) {
-      console.error("Something went wrong with the query")
-      return [];
-  }
-};
+await Promise.all(jobsInsertResults);
 
-await Promise.all(jobs_results)
-const result = await getJobData();
-// console.log(result);
-client.end();
+db.$pool.end();
+console.log("All jobs created");

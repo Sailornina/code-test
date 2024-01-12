@@ -55,3 +55,9 @@ SELECT AVG(avg_worked) FROM total_by_person;
 DELETE FROM jobs;
 DELETE FROM persons;
 DELETE FROM companies;
+
+SELECT * FROM persons;
+SELECT * FROM companies;
+SELECT * FROM jobs;
+SELECT id FROM persons;
+SELECT id FROM companies;
