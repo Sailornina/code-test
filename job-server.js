@@ -1,5 +1,5 @@
 import { faker } from '@faker-js/faker';
-import pgPromise from 'pg-promise'
+import pgPromise from 'pg-promise';
 
 const BATCH_SIZE = 100;
 
@@ -10,24 +10,22 @@ const options = {
   password: process.env.POSTGRES_PWD,
   port: process.env.POSTGRES_PORT,
   allowExitOnIdle: true
-
 }
+
 const pgp = pgPromise()
 const db = pgp(options)
 
 function slicedArray(array, sliceSize) {
   return array.reduce((acc, current, index) => {
     const sliceIndex = Math.floor(index / sliceSize);
-  
     if (!acc[sliceIndex]) {
       acc[sliceIndex] = [current];
     } else {
       acc[sliceIndex].push(current);
-    }
-  
+    } 
     return acc;
   }, []);
-}
+};
 
 //Persons.
 const generateRandomPerson = () => ({
@@ -38,7 +36,7 @@ const generateRandomPerson = () => ({
 const personColumnSet = new pgp.helpers.ColumnSet([
   {name: "first_name"},
   {name: "last_name"}
-], {table: "persons"})
+], {table: "persons"});
 
 const persons = Array.from({ length: 10000 }, generateRandomPerson);
 
@@ -53,7 +51,7 @@ const generateRandomCompany = () => ({
 
 const companyColumnSet = new pgp.helpers.ColumnSet([
   {name: "company_name"}
-], {table: "companies"})
+], {table: "companies"});
 
 const companies = Array.from({ length: 5000 }, generateRandomCompany);
 
@@ -61,7 +59,7 @@ const companiesInsertResults = slicedArray(companies, BATCH_SIZE).map((batchToIn
   return db.none(pgp.helpers.insert(batchToInsert, companyColumnSet));
 });
 
-await Promise.all([personsInsertResults, companiesInsertResults].flat())
+await Promise.all([personsInsertResults, companiesInsertResults].flat());
 
 console.log("Companies and Persons are Done!")
 
@@ -74,21 +72,18 @@ const jobColumnSet = new pgp.helpers.ColumnSet([
   {name: "company_id"},
   {name: "start_date"},
   {name: "end_date"},
-], {table: "jobs"})
+], {table: "jobs"});
 
 let allJobs = personIds.flatMap((personId) => {
-
   const numberOfJobs = Math.floor(Math.random() * 3) + 1;
-
   var currentDate = new Date();
 
   let jobs = []
 
   for (let i = 0; i < numberOfJobs; i++) {
     const companyId = companyIds[Math.floor(Math.random()*companyIds.length)];
-
-    const end_date = i == 0 ? null : faker.date.past({ years: 1, refDate: currentDate})
-    const start_date = i == 0 ? faker.date.past({years: 3}) : faker.date.past({years: 2, refDate: end_date})
+    const end_date = i == 0 ? null : faker.date.past({ years: 1, refDate: currentDate});
+    const start_date = i == 0 ? faker.date.past({years: 3}) : faker.date.past({years: 2, refDate: end_date});
 
     currentDate = start_date;
 
@@ -99,7 +94,6 @@ let allJobs = personIds.flatMap((personId) => {
       end_date
     })
   }
-
   return jobs; 
 });
 
